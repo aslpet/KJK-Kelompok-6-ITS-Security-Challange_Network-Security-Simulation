@@ -1,10 +1,10 @@
 # ITS Secure Network Challenge - Kelompok 6
 
-> **Implementasi Arsitektur Keamanan Berbasis Zona (Zone-Based Security) dengan Segmentasi Fisik & Manajemen Trafik Adaptif.**
+> **Implementasi Arsitektur Keamanan Berbasis Zona (Zone-Based Security) dengan Segmentasi Fisik, Mitigasi DDoS, & Manajemen Trafik Adaptif.**
 
-Proyek ini mendemonstrasikan desain dan implementasi pertahanan jaringan untuk Departemen Teknologi Informasi ITS menggunakan filosofi **Zero Trust** dan **Physical Segmentation**.
+Proyek ini mendemonstrasikan desain dan implementasi pertahanan jaringan "Hardened" untuk Departemen Teknologi Informasi ITS menggunakan filosofi **Zero Trust** dan **Physical Segmentation**.
 
-## Anggota Tim (Kelompok 6)
+## Anggota Tim
 1. **Angga Firmansyah** - 5027241062
 2. **Ahmad Rafi Fadhillah Dwiputra** - 5027241068
 3. **Fika Arka Nuriyah** - 5027241071
@@ -14,103 +14,96 @@ Proyek ini mendemonstrasikan desain dan implementasi pertahanan jaringan untuk D
 
 ## Arsitektur & Topologi
 
-Sistem ini meninggalkan model jaringan datar (*flat network*) dan beralih ke topologi **Hub-and-Spoke** dengan isolasi perangkat keras.
+Kami meninggalkan model jaringan datar (*flat network*) dan beralih ke topologi **Hub-and-Spoke** dengan isolasi perangkat keras untuk mencegah kegagalan sistemik.
 
-### Komponen Utama
-* **Core Security:** 1x MikroTik RouterOS (Firewall Pusat, QoS, Routing).
+### Komponen Infrastruktur
+* **Core Security:** 1x MikroTik RouterOS sebagai Firewall Pusat, Traffic Shaper (QoS), dan Detektor Serangan.
 * **Zone Routers:** 4x MikroTik Router (Guest, Student, Admin, Academic) untuk isolasi *fault domain*.
-* **Edge Router:** 1x MikroTik sebagai gerbang NAT ke Internet.
-* **End-Points:** 6x Debian Linux Hosts (Simulasi Client & Server).
+* **Edge Router:** 1x MikroTik sebagai gerbang NAT ke Internet dengan IP DHCP Client.
+* **End-Points:** 6x Host **Debian Linux** untuk simulasi layanan nyata (Web Server, Attack Tool).
 
-### Klasifikasi Zona
+### Peta Zona & Kebijakan
 | Zona | Router | Subnet | Trust Level | Kebijakan Utama |
 | :--- | :--- | :--- | :--- | :--- |
-| **ADMIN** | ADMR | `10.20.40.0/24` | ✅ High | Akses penuh (*Full Access*) untuk maintenance. Prioritas QoS Tertinggi. |
-| **AKADEMIK** | AcademicR | `10.20.20.0/24` | 🟡 Medium | Server Akademik. Mendapat garansi bandwidth (*Limit-at*) dan proteksi ketat. |
-| **RISET (IoT)** | AcademicR | `10.20.30.0/24` | 🟡 Medium | Zona eksperimen. Dibatasi jumlah koneksi (*Connection Limit*) untuk cegah Botnet. |
-| **MAHASISWA** | StudentR | `10.20.10.0/24` | 🟠 Low | Akses Internet bebas. Akses ke Server Akademik dibatasi hanya HTTPS/HTTP. |
-| **GUEST** | GuestR | `10.20.50.0/24` | 🔴 Untrusted | Isolasi Total. Hanya boleh Web/DNS ke Internet. Dilarang Ping ke lokal. |
+| **ADMIN** | ADMR | `10.20.40.0/24` | ✅ High | Akses penuh (*God Mode*) ke seluruh jaringan & router. Prioritas Bandwidth Tinggi. |
+| **AKADEMIK** | AcademicR | `10.20.20.0/24` | 🟡 Medium | Server Akademik. Mendapat garansi bandwidth (*Limit-at 50M*) dan proteksi akses (Hanya HTTP/S). |
+| **RISET (IoT)** | AcademicR | `10.20.30.0/24` | 🟡 Medium | Zona eksperimen. Dibatasi jumlah koneksi (*Max 32 Connection*) untuk cegah Botnet. |
+| **MAHASISWA** | StudentR | `10.20.10.0/24` | 🟠 Low | Akses Internet bebas. Akses ke Server Akademik dibatasi hanya Web (HTTP/S). Ping diblokir. |
+| **GUEST** | GuestR | `10.20.50.0/24` | 🔴 Untrusted | Isolasi Total. Hanya boleh Web/DNS ke Internet. Dilarang keras Ping ke jaringan lokal. |
 
 ---
 
-## Fitur Keamanan (Security Features)
+## Fitur Keamanan Unggulan (Hardened)
 
-Sistem ini menerapkan pertahanan berlapis (*Defense in Depth*) yang mencakup:
+Sistem ini menerapkan pertahanan berlapis (*Defense in Depth*) yang telah teruji:
 
-### 1. Hardened Firewall (MikroTik Core)
-* **Port Scan Detection (PSD):** Secara otomatis mendeteksi aktivitas *scanning* (Nmap) dan memblokir IP penyerang selama 15 menit.
-* **IoT Containment:** Membatasi perangkat di zona Riset maksimal **32 koneksi simultan** untuk mencegah serangan DDoS/Botnet.
-* **ICMP Policy:** Ping dibatasi (*Rate Limit 5pps*) dan hanya diizinkan ke arah Internet. Guest dilarang ping ke Admin.
-* **Input Protection:** Akses manajemen router (SSH/Winbox) dikunci hanya untuk IP Admin.
+### 1. Active Defense (Deteksi Serangan)
+* **Port Scan Detection (PSD):** MikroTik secara otomatis mendeteksi pola *scanning* (Nmap) dan memblokir IP penyerang selama **15 menit** (masuk *Address List* `port_scanners`).
+* **IoT Containment:** Membatasi perangkat di zona Riset maksimal **32 koneksi TCP simultan**. Jika lebih (indikasi Botnet/DDoS), paket langsung di-DROP.
 
-### 2. Anti-DDoS (RAW Filtering)
-* Menggunakan tabel RAW `prerouting` untuk membuang paket **IP Bogon/Spoofing** dan serangan **TCP SYN Flood** sebelum membebani CPU router.
+### 2. Anti-DDoS & Spoofing (RAW Table)
+* Menggunakan tabel RAW `prerouting` untuk membuang paket **IP Bogon/Spoofing** dan serangan **TCP SYN Flood** di gerbang terdepan sebelum membebani CPU router.
 
-### 3. Manajemen Bandwidth (QoS Sultan)
-Menggunakan *Simple Queue* dengan prioritas bertingkat:
-* **Priority 1:** Server Akademik (Garansi 50 Mbps).
-* **Priority 2:** Admin.
-* **Priority 8:** Guest (Dibatasi Max 10 Mbps).
+### 3. Local Isolation Patch (Blind Spot Fix)
+* Implementasi *Firewall Filter* lokal pada **AcademicR** untuk memblokir akses langsung dari IoT ke Server Akademik yang berada dalam satu router fisik, menutup celah keamanan internal.
 
-### 4. Local Isolation Patch
-* Implementasi *Firewall Filter* lokal pada **AcademicR** untuk memblokir akses langsung dari IoT ke Server Akademik yang berada dalam satu router fisik.
+### 4. Manajemen Bandwidth (QoS Sultan)
+Menggunakan *Simple Queue* dengan prioritas bertingkat untuk menjamin *Service Availability*:
+* **Priority 1 (Critical):** Server Akademik (Garansi 50 Mbps).
+* **Priority 2 (High):** Admin (Max 100 Mbps).
+* **Priority 8 (Low):** Guest (Dibatasi Max 10 Mbps).
 
 ---
 
-## 📂 Konfigurasi Sistem
+## Panduan Konfigurasi
 
 Seluruh skrip konfigurasi tersedia di folder `Config/`.
 
-### A. Router Configuration
-Gunakan skrip `.sh` berikut untuk mengonfigurasi router di GNS3:
-* **Core:** `Config/MikrotikFW.sh` (Script Utama: Firewall, NAT, QoS, Routing).
-* **Edge:** `Config/Router/EdgeR.sh` (NAT, DHCP Client).
-* **Zones:** `Config/Router/GuestR.sh`, `StudentR.sh`, `ADMR.sh`, `AcademicR.sh`.
+### A. Router Configuration (MikroTik)
+Gunakan skrip `.sh` berikut via Terminal/Winbox:
+1.  **Core Firewall (Wajib):** `Config/MikrotikFW.sh`
+    * *Fitur:* Firewall Filter, NAT, RAW, QoS, MSS Clamping.
+2.  **Router Zona:**
+    * `Config/Router/AcademicR.sh` (Penting: Ada rule blokir lokal IoT).
+    * `EdgeR.sh`, `GuestR.sh`, `StudentR.sh`, `ADMR.sh` (Routing dasar).
 
 ### B. Host Configuration (Debian Linux)
-Konfigurasi IP statis dilakukan pada file `/etc/network/interfaces` di setiap node Debian.
+Edit file `/etc/network/interfaces` pada setiap node Debian dengan konfigurasi IP Statis berikut:
 
-| Hostname | Peran | IP Address | Gateway | Script Config |
+| Hostname | Peran | IP Address | Gateway | Script Referensi |
 | :--- | :--- | :--- | :--- | :--- |
 | **Debian-1** | Guest PC | `10.20.50.2` | `10.20.50.1` | `Config/Hosts/GstVPC.sh` |
-| **Debian-2** | Mahasiswa 1 | `10.20.10.2` | `10.20.10.1` | `Config/Hosts/MhsVPC1.sh` |
-| **Debian-3** | Mahasiswa 2 | `10.20.10.6` | `10.20.10.1` | `Config/Hosts/MhsVPC2.sh` |
-| **Debian-4** | Admin PC | `10.20.40.2` | `10.20.40.1` | `Config/Hosts/AdmVPC.sh` |
-| **Debian-5** | Server Akademik | `10.20.20.2` | `10.20.20.1` | `Config/Hosts/AkdVPC.sh` |
+| **Debian-2** | Mhs 1 | `10.20.10.2` | `10.20.10.1` | `Config/Hosts/MhsVPC1.sh` |
+| **Debian-3** | Mhs 2 | `10.20.10.6` | `10.20.10.1` | `Config/Hosts/MhsVPC2.sh` |
+| **Debian-4** | Admin | `10.20.40.2` | `10.20.40.1` | `Config/Hosts/AdmVPC.sh` |
+| **Debian-5** | Server | `10.20.20.2` | `10.20.20.1` | `Config/Hosts/AkdVPC.sh` |
 | **Debian-6** | Riset IoT | `10.20.30.2` | `10.20.30.1` | `Config/Hosts/RstVPC.sh` |
 
-**Cara Setup Host:**
-1.  Login ke Debian
-2.  Edit config: `sudo nano /etc/network/interfaces`.
-3.  Masukkan konfigurasi sesuai file script terkait.
-4.  Restart hosts: `sudo reboot`.
-5.  Jika ingin menginstall/update: `sudo su` untuk masuk ke `root`.
----
-
-## Panduan Testing
-
-Sebelum melakukan demo, pastikan *tools* berikut sudah terinstall di Debian:
-* **Server:** `apt install apache2` (Web Server).
-* **Attacker (Guest/Riset):** `apt install nmap hping3 curl lynx`.
-* **Client (Mhs/Admin):** `apt install curl lynx mtr-tiny`.
-
-### Skenario Pengujian
-
-1.  **Uji Isolasi Zona:**
-    * Dari Guest: `ping 10.20.40.2` (Admin).
-    * **Hasil:** *Timeout* (Diblokir Firewall).
-
-2.  **Uji Akses Layanan:**
-    * Dari Mahasiswa: `curl http://10.20.20.2`.
-    * **Hasil:** Menampilkan HTML Server Akademik.
-
-3.  **Uji Port Scan Detection (PSD):**
-    * Dari Guest: `nmap -Pn -p 1-100 10.20.40.2`.
-    * **Hasil:** IP Guest masuk ke *Address List* "port_scanners" di MikroTik dan koneksi internet diputus selama 15 menit.
-
-4.  **Uji QoS & IoT Containment:**
-    * Dari Riset (IoT): `hping3 -S --flood -p 80 10.20.20.2`.
-    * **Hasil:** Koneksi dibatasi/didrop oleh firewall rule "LIMIT IOT Connections".
+> **Catatan:** Pastikan nama interface di Debian sesuai (biasanya `eth0`, `ens3`, atau `enp2s0`).
 
 ---
 
+## Skenario Pengujian (Testing Guide)
+
+Pastikan *tools* berikut sudah terinstall di Debian sebelum demo:
+`apt install apache2 nmap hping3 curl lynx mtr-tiny`
+
+### 1. Uji Isolasi Zona (Segmentation)
+* **Aksi:** Dari Guest, ping ke Admin (`ping 10.20.40.2`).
+* **Hasil:** `Request Timed Out`.
+* **Analisis:** Firewall Core memblokir akses lintas zona ilegal.
+
+### 2. Uji Pertahanan Aktif (PSD)
+* **Aksi:** Dari Guest, scan Admin (`nmap -Pn -p 1-100 10.20.40.2`).
+* **Hasil:** IP Guest masuk *Blacklist* di MikroTik dan internet mati total selama 15 menit.
+
+### 3. Uji IoT Containment (DDoS Mitigasi)
+* **Aksi:** Dari Riset IoT, flood ke internet (`hping3 -S --flood -p 80 8.8.8.8`).
+* **Hasil:** Trafik dibatasi oleh rule firewall `LIMIT IOT Connections`. Server aman.
+
+### 4. Uji QoS (Bandwidth Stress Test)
+* **Aksi:** Guest melakukan download besar/flood.
+* **Hasil:** Bandwidth Guest mentok merah di 10 Mbps.
+* **Verifikasi:** Admin/Server tetap bisa akses internet dengan lancar (Priority 1 & 2).
+
+---
