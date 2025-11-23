@@ -9,5 +9,11 @@
 
 # Default Route
 /ip route add dst-address=0.0.0.0/0 gateway=192.168.50.1
+
+# 2. Izinkan ICMP (Ping) Terbatas (Supaya bisa cek gateway hidup/mati)
+/ip firewall filter add chain=input protocol=icmp limit=5,5:packet action=accept comment="Allow Limited Ping"
+
+# 3. BLOKIR SISANYA (SSH, Winbox, Web, dll)
+/ip firewall filter add chain=input action=drop comment="DROP ALL INPUT FROM GUEST"
 # --- SCRIPT END GuestR ---
 
